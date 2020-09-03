@@ -586,7 +586,7 @@ func (o *Options) processConfigFileLine(k string, v interface{}, errors *[]error
 		o.Port = hp.port
 	case "client_advertise":
 		o.ClientAdvertise = v.(string)
-	case "Sctp":
+	case "sctp":
 		o.Sctp = v.(bool)
 	case "port":
 		o.Port = int(v.(int64))
