@@ -18,8 +18,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"github.com/nats-io/nats-server/v2/sctp"
-	"github.com/nats-io/nats-server/v2/sctpinner"
 	"math/rand"
 	"net"
 	"net/url"
@@ -1659,9 +1657,6 @@ func (s *Server) startRouteAcceptLoop() {
 	// Snapshot server options.
 	port := opts.Cluster.Port
 
-	//TCP / SCTP proto flag
-	protoType := 0  // 0 tcp 1 sctp 2 sctp2
-
 	if port == -1 {
 		port = 0
 	}
@@ -1683,20 +1678,7 @@ func (s *Server) startRouteAcceptLoop() {
 	var l net.Listener
 
 	hp := net.JoinHostPort(opts.Cluster.Host, strconv.Itoa(port))
-	switch protoType {
-	case 0:
-		l, e = natsListen("tcp", hp)
-		break
-	case 1:
-		addr, _ := sctpinner.ResolveSCTPAddr("sctp", hp)
-		l, e = sctpinner.ListenSCTP("sctp", addr)
-		break
-	case 2:
-		addr, _ := net.ResolveUDPAddr("udp", hp)
-		l, e = sctp.Listen("udp", addr)
-	default:
-		panic("Not support proto")
-	}
+	l, e = natsListen("tcp", hp)
 
 	if e != nil {
 		s.mu.Unlock()
@@ -1705,20 +1687,8 @@ func (s *Server) startRouteAcceptLoop() {
 	}
 
 	// Log proto route connections info
-	switch protoType {
-	case 1:
-		s.Noticef("Listening for client connections on %s",
-			net.JoinHostPort(opts.Host, strconv.Itoa(l.Addr().(*sctpinner.SCTPAddr).Port)))
-		break
-	case 2:
-		s.Noticef("Listening for client connections on %s",
-			net.JoinHostPort(opts.Host, strconv.Itoa(l.Addr().(*net.UDPAddr).Port)))
-		break
-	default:
-		s.Noticef("Listening for client connections on %s",
-			net.JoinHostPort(opts.Host, strconv.Itoa(l.Addr().(*net.TCPAddr).Port)))
-		break
-	}
+	s.Noticef("Listening for client connections on %s",
+		net.JoinHostPort(opts.Host, strconv.Itoa(l.Addr().(*net.TCPAddr).Port)))
 
 	proto := RouteProtoV2
 	// For tests, we want to be able to make this server behave
@@ -1757,17 +1727,7 @@ func (s *Server) startRouteAcceptLoop() {
 	// If we have selected a random port...
 	if port == 0 {
 		// Write resolved port back to options.
-		switch protoType {
-		case 1:
-			opts.Cluster.Port = l.Addr().(*sctpinner.SCTPAddr).Port
-			break
-		case 2:
-			opts.Cluster.Port = l.Addr().(*net.UDPAddr).Port
-			break
-		default:
-			opts.Cluster.Port = l.Addr().(*net.TCPAddr).Port
-			break
-		}
+		opts.Cluster.Port = l.Addr().(*net.TCPAddr).Port
 	}
 	// Check for Auth items
 	if opts.Cluster.Username != "" {

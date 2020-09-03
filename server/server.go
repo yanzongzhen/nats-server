@@ -21,7 +21,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/nats-io/nats-server/v2/sctp"
-	"github.com/nats-io/nats-server/v2/sctpinner"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -1323,6 +1322,8 @@ func (s *Server) Start() {
 	}
 	s.Noticef("Git commit [%s]", gc)
 
+	s.Noticef("The Server Protocol is %v", s.opts.Sctp)
+
 	// Check for insecure configurations.
 	s.checkAuthforWarnings()
 
@@ -1685,10 +1686,10 @@ func (s *Server) AcceptLoop(clr chan struct{}) {
 		}
 	}()
 
-	protoType := 2  // 0 tcp 1 sctp
-
 	// Snapshot server options.
 	opts := s.getOpts()
+
+	isSctp := opts.Sctp
 
 	// Setup state that can enable shutdown
 	s.mu.Lock()
@@ -1702,39 +1703,27 @@ func (s *Server) AcceptLoop(clr chan struct{}) {
 
 	hp := net.JoinHostPort(opts.Host, strconv.Itoa(opts.Port))
 
-	switch protoType {
-	case 0:
+
+	if !isSctp {
 		l, e = natsListen("tcp", hp)
-		break
-	case 1:
-		addr, _ := sctpinner.ResolveSCTPAddr("sctp", hp)
-		l, e = sctpinner.ListenSCTP("sctp", addr)
-		break
-	case 2:
+	} else {
 		addr, _ := net.ResolveUDPAddr("udp", hp)
 		l, e = sctp.Listen("udp", addr)
-	default:
-		panic("Not support proto")
 	}
+
 	if e != nil {
 		s.mu.Unlock()
 		s.Fatalf("Error listening on port: %s, %q", hp, e)
 		return
 	}
-	switch protoType {
-	case 1:
-		s.Noticef("Listening for client connections on %s",
-			net.JoinHostPort(opts.Host, strconv.Itoa(l.Addr().(*sctpinner.SCTPAddr).Port)))
-		break
-	case 2:
+	if isSctp {
 		s.Noticef("Listening for client connections on %s",
 			net.JoinHostPort(opts.Host, strconv.Itoa(l.Addr().(*net.UDPAddr).Port)))
-		break
-	default:
+	} else {
 		s.Noticef("Listening for client connections on %s",
 			net.JoinHostPort(opts.Host, strconv.Itoa(l.Addr().(*net.TCPAddr).Port)))
-		break
 	}
+
 
 	// Alert of TLS enabled.
 	if opts.TLSConfig != nil {
@@ -1748,16 +1737,10 @@ func (s *Server) AcceptLoop(clr chan struct{}) {
 	// to 0 at the beginning this function. So we need to get the actual port
 	if opts.Port == 0 {
 		// Write resolved port back to options.
-		switch protoType {
-		case 1:
-			opts.Cluster.Port = l.Addr().(*sctpinner.SCTPAddr).Port
-			break
-		case 2:
+		if isSctp {
 			opts.Cluster.Port = l.Addr().(*net.UDPAddr).Port
-			break
-		default:
+		} else {
 			opts.Cluster.Port = l.Addr().(*net.TCPAddr).Port
-			break
 		}
 	}
 
@@ -1774,7 +1757,9 @@ func (s *Server) AcceptLoop(clr chan struct{}) {
 	s.clientConnectURLs = s.getClientConnectURLs()
 	s.listener = l
 
-	go s.acceptConnections(l, "Client", func(conn net.Conn) { s.createClient(conn, nil) },
+	go s.acceptConnections(l, "Client", func(conn net.Conn) {
+		s.createClient(conn, nil)
+	},
 		func(_ error) bool {
 			if s.isLameDuckMode() {
 				// Signal that we are not accepting new clients
@@ -1794,7 +1779,6 @@ func (s *Server) AcceptLoop(clr chan struct{}) {
 
 func (s *Server) acceptConnections(l net.Listener, acceptName string, createFunc func(conn net.Conn), errFunc func(err error) bool) {
 	tmpDelay := ACCEPT_MIN_SLEEP
-
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -2094,6 +2078,7 @@ func (c *tlsMixConn) Read(b []byte) (int, error) {
 
 func (s *Server) createClient(conn net.Conn, ws *websocket) *client {
 	// Snapshot server options.
+
 	opts := s.getOpts()
 
 	maxPay := int32(opts.MaxPayload)

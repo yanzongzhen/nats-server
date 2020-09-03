@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -977,6 +978,7 @@ func (c *client) readLoop(pre []byte) {
 
 	for {
 		n, err := nc.Read(b)
+		//log.Printf("Server Buf : %s", b)
 		// If we have any data we will try to parse and exit at the end.
 		if n == 0 && err != nil {
 			c.closeConnection(closedStateForErr(err))
@@ -1064,8 +1066,8 @@ func (c *client) readLoop(pre []byte) {
 			b = make([]byte, c.in.rsz)
 		} else if n < cap(b) && cap(b) > minBufSize && c.in.srs > shortsToShrink {
 			// Shrink, for now don't accelerate, ping/pong will eventually sort it out.
-			c.in.rsz = int32(cap(b) / 2)
-			b = make([]byte, c.in.rsz)
+			//c.in.rsz = int32(cap(b) * (2 / 3))
+			//b = make([]byte, c.in.rsz)
 		}
 		c.mu.Unlock()
 
@@ -1817,6 +1819,7 @@ func (c *client) queueOutbound(data []byte) bool {
 // Assume the lock is held upon entry.
 func (c *client) enqueueProtoAndFlush(proto []byte, doFlush bool) {
 	if c.isClosed() {
+		log.Print("Client has shutdown!!")
 		return
 	}
 	c.queueOutbound(proto)

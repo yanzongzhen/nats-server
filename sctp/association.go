@@ -219,7 +219,6 @@ func DialAssociation(network string, raddr *net.UDPAddr, config Config) (*Associ
 	if err != nil {
 		return nil, err
 	}
-
 	config.NetConn = pConn
 
 	return Client(config)
@@ -1129,7 +1128,6 @@ func (a *Association) OpenStream(streamIdentifier uint16, defaultPayloadType Pay
 
 	s := a.createStream(streamIdentifier, false)
 	s.setDefaultPayloadType(defaultPayloadType)
-
 	return s, nil
 }
 
@@ -1168,6 +1166,7 @@ func (a *Association) createStream(streamIdentifier uint16, accept bool) *Stream
 	} else {
 		a.streams[streamIdentifier] = s
 	}
+
 
 	return s
 }
