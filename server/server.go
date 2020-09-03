@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/nats-io/nats-server/v2/sctp"
+	"github.com/yanzongzhen/sctp"
 	"io"
 	"io/ioutil"
 	"math/rand"
