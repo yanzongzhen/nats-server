@@ -104,7 +104,9 @@ func (lc *ListenConfig) Listen(network string, laddr *net.UDPAddr) (net.Listener
 }
 
 func (l *listener) acceptAssociationLoop() {
+	// TODO: Shutdown
 	for {
+		// TODO: Cleanup association when closing the last stream and/or listener.
 		a, err := l.parent.Accept()
 		if err != nil {
 			// TODO: Error handling
@@ -116,6 +118,7 @@ func (l *listener) acceptAssociationLoop() {
 }
 
 func (l *listener) acceptStreamLoop(a *Association) {
+	// TODO: Shutdown
 	for {
 		s, err := a.AcceptStream()
 		if err != nil {

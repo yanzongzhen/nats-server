@@ -39,9 +39,7 @@ type Stream struct {
 	onBufferedAmountLow func()
 	log                 logging.LeveledLogger
 	name                string
-	wd, rd     			time.Time
 }
-
 
 // StreamIdentifier returns the Stream identifier associated to the stream.
 func (s *Stream) StreamIdentifier() uint16 {
@@ -74,6 +72,8 @@ func (s *Stream) SetReliabilityParams(unordered bool, relType byte, relVal uint3
 // setReliabilityParams sets reliability parameters for this stream.
 // The caller should hold the lock.
 func (s *Stream) setReliabilityParams(unordered bool, relType byte, relVal uint32) {
+	s.log.Debugf("[%s] reliability params: ordered=%v type=%d value=%d",
+		s.name, !unordered, relType, relVal)
 	s.unordered = unordered
 	s.reliabilityType = relType
 	s.reliabilityValue = relVal
@@ -368,24 +368,16 @@ func (s *Stream) RemoteAddr() net.Addr {
 }
 
 // SetDeadline is a stub
-func (s *Stream) SetDeadline(t time.Time) (e error) {
-	e = s.SetReadDeadline(t)
-	if e != nil {
-		return
-	}
-	e = s.SetWriteDeadline(t)
-	return
-}
-
-
-// SetReadDeadline implements the Conn SetReadDeadline method.
-func (s *Stream) SetReadDeadline(t time.Time) error {
-	s.rd = t
+func (s *Stream) SetDeadline(t time.Time) error {
 	return nil
 }
 
-// SetWriteDeadline implements the Conn SetWriteDeadline method.
+// SetReadDeadline is a stub
+func (s *Stream) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+// SetWriteDeadline is a stub
 func (s *Stream) SetWriteDeadline(t time.Time) error {
-	s.wd = t
 	return nil
 }

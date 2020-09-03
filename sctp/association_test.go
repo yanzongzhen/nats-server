@@ -2022,84 +2022,6 @@ func TestAssocDelayedAck(t *testing.T) {
 
 		closeAssociationPair(br, a0, a1)
 	})
-
-	t.Run("Second DATA chunk to generate SACK immedidately", func(t *testing.T) {
-		lim := test.TimeOut(time.Second * 10)
-		defer lim.Stop()
-
-		const si uint16 = 6
-		var n int
-		var nPacketsReceived int
-		var ppi PayloadProtocolIdentifier
-		sbuf := make([]byte, 4000) // size should be less than initial cwnd (4380)
-		rbuf := make([]byte, 4000)
-
-		_, err := cryptoRand.Read(sbuf)
-		if !assert.Nil(t, err, "failed to create associations") {
-			return
-		}
-
-		br := test.NewBridge()
-
-		a0, a1, err := createNewAssociationPair(br, ackModeAlwaysDelay, 0)
-		if !assert.Nil(t, err, "failed to create associations") {
-			assert.FailNow(t, "failed due to earlier error")
-		}
-
-		s0, s1, err := establishSessionPair(br, a0, a1, si)
-		assert.Nil(t, err, "failed to establish session pair")
-
-		a0.stats.reset()
-		a1.stats.reset()
-
-		// Writes data (will fragmented)
-		n, err = s0.WriteSCTP(sbuf, PayloadTypeWebRTCBinary)
-		assert.Nil(t, err, "WriteSCTP failed")
-		assert.Equal(t, n, len(sbuf), "unexpected length of received data")
-
-		// Repeat calling br.Tick() until the buffered amount becomes 0
-		for s0.BufferedAmount() > 0 {
-			for {
-				n = br.Tick()
-				if n == 0 {
-					break
-				}
-			}
-
-			for {
-				s1.lock.RLock()
-				readable := s1.reassemblyQueue.isReadable()
-				s1.lock.RUnlock()
-				if !readable {
-					break
-				}
-				n, ppi, err = s1.ReadSCTP(rbuf)
-				if !assert.Nil(t, err, "ReadSCTP failed") {
-					return
-				}
-				assert.Equal(t, len(sbuf), n, "unexpected length of received data")
-				assert.Equal(t, ppi, PayloadTypeWebRTCBinary, "unexpected ppi")
-
-				nPacketsReceived++
-			}
-		}
-
-		br.Process()
-
-		assert.Equal(t, 1, nPacketsReceived, "should be one packet received")
-		assert.Equal(t, 0, s1.getNumBytesInReassemblyQueue(), "reassembly queue should be empty")
-
-		t.Logf("nDATAs      : %d\n", a1.stats.getNumDATAs())
-		t.Logf("nSACKs      : %d\n", a0.stats.getNumSACKs())
-		t.Logf("nAckTimeouts: %d\n", a1.stats.getNumAckTimeouts())
-
-		assert.Equal(t, uint64(4), a1.stats.getNumDATAs(), "DATA chunk count mismatch")
-		assert.True(t, a0.stats.getNumSACKs() < a1.stats.getNumDATAs(), "sack count should less than data")
-		assert.Equal(t, uint64(0), a1.stats.getNumAckTimeouts(), "ackTimeout count mismatch")
-		assert.Equal(t, uint64(0), a0.stats.getNumT3Timeouts(), "should be no retransmit")
-
-		closeAssociationPair(br, a0, a1)
-	})
 }
 
 func TestAssocReset(t *testing.T) {
@@ -2419,4 +2341,65 @@ func TestStats(t *testing.T) {
 	defer conn.mu.Unlock()
 	assert.Equal(t, conn.bytesReceived, a.BytesReceived())
 	assert.Equal(t, conn.bytesSent, a.BytesSent())
+}
+
+func TestAssocHandleInit(t *testing.T) {
+	loggerFactory := logging.NewDefaultLoggerFactory()
+
+	handleInitTest := func(t *testing.T, initialState uint32, expectErr bool) {
+		a := createAssociation(Config{
+			NetConn:       &dumbConn{},
+			LoggerFactory: loggerFactory,
+		})
+		a.setState(initialState)
+		pkt := &packet{
+			sourcePort:      5001,
+			destinationPort: 5002,
+		}
+		init := &chunkInit{}
+		init.initialTSN = 1234
+		init.numOutboundStreams = 1001
+		init.numInboundStreams = 1002
+		init.initiateTag = 5678
+		init.advertisedReceiverWindowCredit = 512 * 1024
+		setSupportedExtensions(&init.chunkInitCommon)
+
+		_, err := a.handleInit(pkt, init)
+		if expectErr {
+			assert.Error(t, err, "should fail")
+			return
+		}
+		assert.NoError(t, err, "should succeed")
+		assert.Equal(t, init.initialTSN-1, a.peerLastTSN, "should match")
+		assert.Equal(t, uint16(1001), a.myMaxNumOutboundStreams, "should match")
+		assert.Equal(t, uint16(1002), a.myMaxNumInboundStreams, "should match")
+		assert.Equal(t, uint32(5678), a.peerVerificationTag, "should match")
+		assert.Equal(t, pkt.sourcePort, a.destinationPort, "should match")
+		assert.Equal(t, pkt.destinationPort, a.sourcePort, "should match")
+		assert.True(t, a.useForwardTSN, "should be set to true")
+	}
+
+	t.Run("normal", func(t *testing.T) {
+		handleInitTest(t, closed, false)
+	})
+
+	t.Run("unexpected state established", func(t *testing.T) {
+		handleInitTest(t, established, true)
+	})
+
+	t.Run("unexpected state shutdownAckSent", func(t *testing.T) {
+		handleInitTest(t, shutdownAckSent, true)
+	})
+
+	t.Run("unexpected state shutdownPending", func(t *testing.T) {
+		handleInitTest(t, shutdownPending, true)
+	})
+
+	t.Run("unexpected state shutdownReceived", func(t *testing.T) {
+		handleInitTest(t, shutdownReceived, true)
+	})
+
+	t.Run("unexpected state shutdownSent", func(t *testing.T) {
+		handleInitTest(t, shutdownSent, true)
+	})
 }

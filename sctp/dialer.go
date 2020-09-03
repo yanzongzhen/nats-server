@@ -9,10 +9,7 @@ import (
 // Dial connects to the given network address and establishes a
 // SCTP stream on top. For more control use DialAssociation.
 func Dial(network string, raddr *net.UDPAddr, streamIdentifier uint16) (*Stream, error) {
-	var d Dialer
-	d.PayloadType = PayloadTypeWebRTCBinary
-	s, e := d.Dial(network, raddr, streamIdentifier)
-	return s, e
+	return (&Dialer{}).Dial(network, raddr, streamIdentifier)
 }
 
 // A Dialer contains options for connecting to an address.
@@ -42,5 +39,6 @@ func (d *Dialer) Dial(network string, raddr *net.UDPAddr, streamIdentifier uint1
 	if err != nil {
 		return nil, err
 	}
-	return a.OpenStream(streamIdentifier, PayloadTypeWebRTCBinary)
+
+	return a.OpenStream(streamIdentifier, d.PayloadType)
 }

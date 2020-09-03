@@ -5,15 +5,18 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/pion/logging"
+	"github.com/pion/randutil"
 	"github.com/pkg/errors"
 )
+
+// Use global random generator to properly seed by crypto grade random.
+var globalMathRandomGenerator = randutil.NewMathRandomGenerator()
 
 const (
 	receiveMTU          uint32 = 8192 // MTU for inbound packet (from DTLS)
@@ -219,6 +222,7 @@ func DialAssociation(network string, raddr *net.UDPAddr, config Config) (*Associ
 	if err != nil {
 		return nil, err
 	}
+
 	config.NetConn = pConn
 
 	return Client(config)
@@ -241,9 +245,6 @@ func Client(config Config) (*Association, error) {
 }
 
 func createAssociation(config Config) *Association {
-	rs := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(rs)
-
 	var maxReceiveBufferSize uint32
 	if config.MaxReceiveBufferSize == 0 {
 		maxReceiveBufferSize = initialRecvBufSize
@@ -251,7 +252,7 @@ func createAssociation(config Config) *Association {
 		maxReceiveBufferSize = config.MaxReceiveBufferSize
 	}
 
-	tsn := r.Uint32()
+	tsn := globalMathRandomGenerator.Uint32()
 	a := &Association{
 		netConn:                 config.NetConn,
 		maxReceiveBufferSize:    maxReceiveBufferSize,
@@ -263,7 +264,7 @@ func createAssociation(config Config) *Association {
 		controlQueue:            newControlQueue(),
 		mtu:                     initialMTU,
 		maxPayloadSize:          initialMTU - (commonHeaderSize + dataChunkHeaderSize),
-		myVerificationTag:       r.Uint32(),
+		myVerificationTag:       globalMathRandomGenerator.Uint32(),
 		myNextTSN:               tsn,
 		myNextRSN:               tsn,
 		minTSN2MeasureRTT:       tsn,
@@ -833,11 +834,6 @@ func (a *Association) handleInit(p *packet, i *chunkInit) ([]*packet, error) {
 	// responding, the endpoint MUST send the INIT ACK back to the same
 	// address that the original INIT (sent by this endpoint) was sent.
 
-	// https://tools.ietf.org/html/rfc4960#section-5.2.1
-	// Upon receipt of an INIT in the COOKIE-ECHOED state, an endpoint MUST
-	// respond with an INIT ACK using the same parameters it sent in its
-	// original INIT chunk (including its Initiate Tag, unchanged)
-
 	if state != closed && state != cookieWait && state != cookieEchoed {
 		// 5.2.2.  Unexpected INIT in States Other than CLOSED, COOKIE-ECHOED,
 		//        COOKIE-WAIT, and SHUTDOWN-ACK-SENT
@@ -857,6 +853,21 @@ func (a *Association) handleInit(p *packet, i *chunkInit) ([]*packet, error) {
 	// subtracting one from it.
 	a.peerLastTSN = i.initialTSN - 1
 
+	for _, param := range i.params {
+		switch v := param.(type) {
+		case *paramSupportedExtensions:
+			for _, t := range v.ChunkTypes {
+				if t == ctForwardTSN {
+					a.log.Debugf("[%s] use ForwardTSN (on init)\n", a.name)
+					a.useForwardTSN = true
+				}
+			}
+		}
+	}
+	if !a.useForwardTSN {
+		a.log.Warnf("[%s] not using ForwardTSN (on init)\n", a.name)
+	}
+
 	outbound := &packet{}
 	outbound.verificationTag = a.peerVerificationTag
 	outbound.sourcePort = a.sourcePort
@@ -871,7 +882,10 @@ func (a *Association) handleInit(p *packet, i *chunkInit) ([]*packet, error) {
 	initAck.advertisedReceiverWindowCredit = a.maxReceiveBufferSize
 
 	if a.myCookie == nil {
-		a.myCookie = newRandomStateCookie()
+		var err error
+		if a.myCookie, err = newRandomStateCookie(); err != nil {
+			return nil, err
+		}
 	}
 
 	initAck.params = []param{a.myCookie}
@@ -929,10 +943,14 @@ func (a *Association) handleInitAck(p *packet, i *chunkInitAck) error {
 		case *paramSupportedExtensions:
 			for _, t := range v.ChunkTypes {
 				if t == ctForwardTSN {
+					a.log.Debugf("[%s] use ForwardTSN (on initAck)\n", a.name)
 					a.useForwardTSN = true
 				}
 			}
 		}
+	}
+	if !a.useForwardTSN {
+		a.log.Warnf("[%s] not using ForwardTSN (on initAck)\n", a.name)
 	}
 	if cookieParam == nil {
 		return errors.Errorf("no cookie in InitAck")
@@ -977,19 +995,27 @@ func (a *Association) handleHeartbeat(c *chunkHeartbeat) []*packet {
 func (a *Association) handleCookieEcho(c *chunkCookieEcho) []*packet {
 	state := a.getState()
 	a.log.Debugf("[%s] COOKIE-ECHO received in state '%s'", a.name, getAssociationStateString(state))
-	if state != closed && state != cookieWait && state != cookieEchoed {
+	switch state {
+	default:
 		return nil
+	case established:
+		if !bytes.Equal(a.myCookie.cookie, c.cookie) {
+			return nil
+		}
+	case closed, cookieWait, cookieEchoed:
+		if !bytes.Equal(a.myCookie.cookie, c.cookie) {
+			return nil
+		}
+
+		a.t1Init.stop()
+		a.storedInit = nil
+
+		a.t1Cookie.stop()
+		a.storedCookieEcho = nil
+
+		a.setState(established)
+		a.handshakeCompletedCh <- nil
 	}
-
-	if !bytes.Equal(a.myCookie.cookie, c.cookie) {
-		return nil
-	}
-
-	a.t1Init.stop()
-	a.storedInit = nil
-
-	a.t1Cookie.stop()
-	a.storedCookieEcho = nil
 
 	p := &packet{
 		verificationTag: a.peerVerificationTag,
@@ -997,9 +1023,6 @@ func (a *Association) handleCookieEcho(c *chunkCookieEcho) []*packet {
 		destinationPort: a.destinationPort,
 		chunks:          []chunk{&chunkCookieAck{}},
 	}
-
-	a.setState(established)
-	a.handshakeCompletedCh <- nil
 	return pack(p)
 }
 
@@ -1128,6 +1151,7 @@ func (a *Association) OpenStream(streamIdentifier uint16, defaultPayloadType Pay
 
 	s := a.createStream(streamIdentifier, false)
 	s.setDefaultPayloadType(defaultPayloadType)
+
 	return s, nil
 }
 
@@ -1166,7 +1190,6 @@ func (a *Association) createStream(streamIdentifier uint16, accept bool) *Stream
 	} else {
 		a.streams[streamIdentifier] = s
 	}
-
 
 	return s
 }
@@ -1591,6 +1614,7 @@ func (a *Association) handleForwardTSN(c *chunkForwardTSN) []*packet {
 	a.log.Tracef("[%s] FwdTSN: %s", a.name, c.String())
 
 	if !a.useForwardTSN {
+		a.log.Warn("[%s] received FwdTSN but not enabled")
 		// Return an error chunk
 		cerr := &chunkError{
 			errorCauses: []errorCause{&errorCauseUnrecognizedChunkType{}},
@@ -1611,6 +1635,8 @@ func (a *Association) handleForwardTSN(c *chunkForwardTSN) []*packet {
 	//   send a SACK to its peer (the sender of the FORWARD TSN) since such a
 	//   duplicate may indicate the previous SACK was lost in the network.
 
+	a.log.Tracef("[%s] should send ack? newCumTSN=%d peerLastTSN=%d\n",
+		a.name, c.newCumulativeTSN, a.peerLastTSN)
 	if sna32LTE(c.newCumulativeTSN, a.peerLastTSN) {
 		a.log.Tracef("[%s] sending ack on Forward TSN", a.name)
 		a.ackState = ackStateImmediate
@@ -1751,8 +1777,8 @@ func (a *Association) movePendingDataChunkToInflightQueue(c *chunkPayloadData) {
 
 	a.checkPartialReliabilityStatus(c)
 
-	a.log.Tracef("[%s] sending tsn=%d ssn=%d sent=%d len=%d (%v,%v)",
-		a.name, c.tsn, c.streamSequenceNumber, c.nSent, len(c.userData), c.beginningFragment, c.endingFragment)
+	a.log.Tracef("[%s] sending ppi=%d tsn=%d ssn=%d sent=%d len=%d (%v,%v)",
+		a.name, c.payloadType, c.tsn, c.streamSequenceNumber, c.nSent, len(c.userData), c.beginningFragment, c.endingFragment)
 
 	// Push it into the inflightQueue
 	a.inflightQueue.pushNoCheck(c)
@@ -1876,22 +1902,33 @@ func (a *Association) checkPartialReliabilityStatus(c *chunkPayloadData) {
 		return
 	}
 
+	// draft-ietf-rtcweb-data-protocol-09.txt section 6
+	//	6.  Procedures
+	//		All Data Channel Establishment Protocol messages MUST be sent using
+	//		ordered delivery and reliable transmission.
+	//
+	if c.payloadType == PayloadTypeWebRTCDCEP {
+		return
+	}
+
 	// PR-SCTP
 	if s, ok := a.streams[c.streamIdentifier]; ok {
 		s.lock.RLock()
 		if s.reliabilityType == ReliabilityTypeRexmit {
 			if c.nSent >= s.reliabilityValue {
 				c.setAbandoned(true)
-				a.log.Tracef("[%s] marked as abandoned: tsn=%d (remix: %d)", a.name, c.tsn, c.nSent)
+				a.log.Tracef("[%s] marked as abandoned: tsn=%d ppi=%d (remix: %d)", a.name, c.tsn, c.payloadType, c.nSent)
 			}
 		} else if s.reliabilityType == ReliabilityTypeTimed {
 			elapsed := int64(time.Since(c.since).Seconds() * 1000)
 			if elapsed >= int64(s.reliabilityValue) {
 				c.setAbandoned(true)
-				a.log.Tracef("[%s] marked as abandoned: tsn=%d (timed: %d)", a.name, c.tsn, elapsed)
+				a.log.Tracef("[%s] marked as abandoned: tsn=%d ppi=%d (timed: %d)", a.name, c.tsn, c.payloadType, elapsed)
 			}
 		}
 		s.lock.RUnlock()
+	} else {
+		a.log.Errorf("[%s] stream %d not found)", a.name, c.streamIdentifier)
 	}
 }
 
