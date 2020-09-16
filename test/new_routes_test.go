@@ -23,7 +23,7 @@ import (
 
 	"github.com/yanzongzhen/nats-server/logger"
 	"github.com/yanzongzhen/nats-server/server"
-	"github.com/nats-io/nats.go"
+	"github.com/yanzongzhen/nats.go"
 )
 
 func runNewRouteServer(t *testing.T) (*server.Server, *server.Options) {

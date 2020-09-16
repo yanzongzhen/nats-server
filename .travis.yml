@@ -10,7 +10,7 @@ env:
 - GO111MODULE=off
 go_import_path: github.com/nats-io/nats-server
 install:
-- go get github.com/nats-io/nats.go/
+- go get github.com/yanzongzhen/nats.go/
 - go get github.com/nats-io/nkeys
 - go get github.com/nats-io/jwt
 - go get -u honnef.co/go/tools/cmd/staticcheck

@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/yanzongzhen/nats-server/server"
-	nats "github.com/nats-io/nats.go"
+	nats "github.com/yanzongzhen/nats.go"
 )
 
 const PERF_PORT = 8422

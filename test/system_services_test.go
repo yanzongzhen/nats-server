@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/yanzongzhen/nats-server/server"
-	"github.com/nats-io/nats.go"
+	"github.com/yanzongzhen/nats.go"
 )
 
 const dbgSubs = "$SYS.DEBUG.SUBSCRIBERS"

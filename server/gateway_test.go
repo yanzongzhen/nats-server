@@ -31,7 +31,7 @@ import (
 	"time"
 
 	"github.com/yanzongzhen/nats-server/logger"
-	"github.com/nats-io/nats.go"
+	"github.com/yanzongzhen/nats.go"
 )
 
 func init() {

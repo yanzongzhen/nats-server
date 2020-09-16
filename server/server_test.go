@@ -34,7 +34,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go"
+	"github.com/yanzongzhen/nats.go"
 )
 
 func checkFor(t *testing.T, totalWait, sleepDur time.Duration, f func() error) {

@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/yanzongzhen/nats-server/server"
-	"github.com/nats-io/nats.go"
+	"github.com/yanzongzhen/nats.go"
 )
 
 // IMPORTANT: Tests in this file are not executed when running with the -race flag.
