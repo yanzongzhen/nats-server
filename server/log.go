@@ -18,7 +18,7 @@ import (
 	"os"
 	"sync/atomic"
 
-	srvlog "github.com/nats-io/nats-server/v2/logger"
+	srvlog "github.com/yanzongzhen/nats-server/logger"
 )
 
 // Logger interface of the NATS Server

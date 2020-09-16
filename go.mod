@@ -1,4 +1,4 @@
-module github.com/nats-io/nats-server/v2
+module github.com/yanzongzhen/nats-server
 
 require (
 	github.com/minio/highwayhash v1.0.0

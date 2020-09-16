@@ -28,7 +28,7 @@ import (
 	"sync"
 
 	"github.com/minio/highwayhash"
-	"github.com/nats-io/nats-server/v2/server/sysmem"
+	"github.com/yanzongzhen/nats-server/server/sysmem"
 )
 
 // JetStreamConfig determines this server's configuration.

@@ -36,7 +36,7 @@ import (
 	"github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
 
-	"github.com/nats-io/nats-server/v2/conf"
+	"github.com/yanzongzhen/nats-server/conf"
 )
 
 var allowUnknownTopLevelField = int32(0)

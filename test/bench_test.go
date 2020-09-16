@@ -31,7 +31,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats-server/v2/server"
+	"github.com/yanzongzhen/nats-server/server"
 	nats "github.com/nats-io/nats.go"
 )
 
