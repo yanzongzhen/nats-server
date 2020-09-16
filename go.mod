@@ -3,7 +3,7 @@ module github.com/yanzongzhen/nats-server
 require (
 	github.com/minio/highwayhash v1.0.0
 	github.com/nats-io/jwt/v2 v2.0.0-20200820224411-1e751ff168ab
-	github.com/nats-io/nats.go v1.10.1-0.20200606002146-fc6fed82929a
+	github.com/yanzongzhen/nats.go v1.0.0
 	github.com/nats-io/nkeys v0.2.0
 	github.com/nats-io/nuid v1.0.1
 	github.com/yanzongzhen/sctp v1.8.4
