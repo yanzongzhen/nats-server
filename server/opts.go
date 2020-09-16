@@ -3508,7 +3508,11 @@ func setBaselineOptions(opts *Options) {
 		opts.MaxConn = DEFAULT_MAX_CONNECTIONS
 	}
 	if opts.PingInterval == 0 {
-		opts.PingInterval = DEFAULT_PING_INTERVAL
+		if opts.Sctp {
+			opts.PingInterval = DEFAULT_SCTP_PING_INTERVAL
+		} else {
+			opts.PingInterval = DEFAULT_PING_INTERVAL
+		}
 	}
 	if opts.MaxPingsOut == 0 {
 		opts.MaxPingsOut = DEFAULT_PING_MAX_OUT
@@ -3866,8 +3870,6 @@ func ConfigureOptions(fs *flag.FlagSet, args []string, printVersion, printHelp, 
 	if opts.RoutesStr != "" && opts.Cluster.ListenStr == "" && opts.Cluster.Host == "" && opts.Cluster.Port == 0 {
 		return nil, errors.New("solicited routes require cluster capabilities, e.g. --cluster")
 	}
-
-
 
 	return opts, nil
 }
