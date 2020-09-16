@@ -1066,8 +1066,10 @@ func (c *client) readLoop(pre []byte) {
 			b = make([]byte, c.in.rsz)
 		} else if n < cap(b) && cap(b) > minBufSize && c.in.srs > shortsToShrink {
 			// Shrink, for now don't accelerate, ping/pong will eventually sort it out.
-			//c.in.rsz = int32(cap(b) / 2)
-			//b = make([]byte, c.in.rsz)
+			if !c.srv.opts.Sctp {
+				c.in.rsz = int32(cap(b) / 2)
+				b = make([]byte, c.in.rsz)
+			}
 		}
 		c.mu.Unlock()
 
